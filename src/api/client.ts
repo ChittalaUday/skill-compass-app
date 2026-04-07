@@ -1,7 +1,8 @@
 import axios from 'axios';
 
-// Placeholder URL - replace with env variable in production
-const BASE_URL = 'https://api.example.com/v1';
+// Get API URL from environment variables
+const BASE_URL =
+    process.env.EXPO_PUBLIC_API_URL || 'https://api.example.com/v1';
 
 const client = axios.create({
     baseURL: BASE_URL,

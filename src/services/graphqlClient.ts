@@ -9,11 +9,11 @@ import { getMainDefinition } from '@apollo/client/utilities';
 import * as SecureStore from 'expo-secure-store';
 import { createClient } from 'graphql-ws';
 
-const API_URL = 'http://13.239.60.116:5003/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.example.com/v1';
 const HTTP_GRAPHQL =
-    API_URL.replace(/\/api$/, '') + '/graphql';
+    process.env.EXPO_PUBLIC_GRAPHQL_URL || API_URL.replace(/\/api$/, '') + '/graphql';
 const WS_URL =
-    API_URL.replace(/^http/, 'ws').replace(/\/api$/, '') + '/graphql';
+    process.env.EXPO_PUBLIC_GRAPHQL_WS_URL || API_URL.replace(/^http/, 'ws').replace(/\/api$/, '') + '/graphql';
 
 // HTTP link for queries and mutations
 const httpLink = new HttpLink({
