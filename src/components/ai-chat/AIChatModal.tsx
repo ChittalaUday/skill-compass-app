@@ -61,20 +61,25 @@ export const AIChatModal = ({ visible, onClose, mode = 'adult', context }: AICha
     const [localLlmConfig, setLocalLlmConfig] = useState<any>(null);
     const [downloadProgress, setDownloadProgress] = useState(0);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [downloadStatus, setDownloadStatus] = useState('Initializing system...');
     const [sttStatus, setSttStatus] = useState<'idle' | 'listening' | 'converting'>('idle');
 
     // Initial check for models
     React.useEffect(() => {
         const prepareModel = async () => {
             setIsDownloading(true);
+            setDownloadStatus('Checking for local AI models...');
             try {
                 // We pass the default remote config, and the service returns local paths
-                const config = await aiService.ensureModelDownloaded(LFM2_5_350M, (p) => {
+                const config = await aiService.ensureModelDownloaded(LFM2_5_350M, (p, status) => {
                     setDownloadProgress(p);
+                    setDownloadStatus(status + ` (${Math.round(p * 100)}%)`);
                 });
+                setDownloadStatus('Loading into memory...');
                 setLocalLlmConfig(config);
             } catch (error) {
                 console.error('Failed to prepare AI model:', error);
+                setDownloadStatus('AI Setup Failed');
             } finally {
                 setIsDownloading(false);
             }
@@ -285,16 +290,20 @@ export const AIChatModal = ({ visible, onClose, mode = 'adult', context }: AICha
                         <View className="flex-1 bg-white/95 mt-10 rounded-t-[32px] overflow-hidden shadow-2xl">
                             {/* Header */}
                             <View className="flex-row items-center justify-between p-4 border-b border-slate-100 bg-white">
-                                <View className="flex-row items-center gap-3">
-                                    <View className="w-10 h-10 rounded-full bg-indigo-100 items-center justify-center">
+                                <View className="flex-row items-center flex-1 mr-2 gap-3">
+                                    <View className="w-10 h-10 rounded-full bg-indigo-100 items-center justify-center flex-shrink-0">
                                         <MaterialIcons name="smart-toy" size={24} color="#4F46E5" />
                                     </View>
-                                    <View>
-                                        <Text className="font-bold text-slate-800 text-lg">Skill Compass Mentor</Text>
+                                    <View className="flex-1">
+                                        <Text className="font-bold text-slate-800 text-lg" numberOfLines={1}>Skill Compass Mentor</Text>
                                         <View className="flex-row items-center gap-1">
                                             <View className={`w-2 h-2 rounded-full ${llm.isReady ? 'bg-green-500' : 'bg-orange-500'}`} />
-                                            <Text className="text-xs text-slate-500 font-medium">
-                                                {llm.isReady ? 'Ready to help' : (isDownloading ? `Downloading (${Math.round(downloadProgress * 100)}%)` : 'Initializing...')}
+                                            <Text 
+                                                className="text-xs text-slate-500 font-medium" 
+                                                numberOfLines={1} 
+                                                ellipsizeMode="tail"
+                                            >
+                                                {llm.isReady ? 'Ready to help' : (isDownloading || !llm.isReady ? downloadStatus : 'Warming up...')}
                                             </Text>
                                         </View>
                                     </View>
@@ -465,7 +474,7 @@ export const AIChatModal = ({ visible, onClose, mode = 'adult', context }: AICha
                                 <View className="flex-row items-center gap-2 bg-slate-50 p-2 rounded-full border border-slate-200">
                                     <TextInput
                                         className="flex-1 px-4 py-2 text-base text-slate-800 font-medium"
-                                        placeholder={isDownloading ? `Preparing AI... ${Math.round(downloadProgress * 100)}%` : (!llm.isReady ? "Initializing model..." : (isWhisperRequired && !sttModel.isReady ? "Loading Whisper..." : "Ask me anything..."))}
+                                        placeholder={!llm.isReady ? downloadStatus : (isWhisperRequired && !sttModel.isReady ? "Loading Whisper..." : "Ask me anything...")}
                                         placeholderTextColor="#94A3B8"
                                         value={inputText}
                                         onChangeText={setInputText}

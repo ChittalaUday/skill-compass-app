@@ -19,13 +19,7 @@ import { ThemeProvider as AppThemeProvider } from '../src/context/ThemeContext';
 import { ToastProvider } from '../src/context/ToastContext';
 import { apolloClient } from '../src/services/graphqlClient';
 import { store, persistor } from '../src/store';
-import { initExecutorch } from 'react-native-executorch';
-import { ExpoResourceFetcher } from 'react-native-executorch-expo-resource-fetcher';
 import { aiService } from '../src/services/aiService';
-
-initExecutorch({
-  resourceFetcher: ExpoResourceFetcher,
-});
 
 configureReanimatedLogger({ level: ReanimatedLogLevel.warn, strict: false });
 

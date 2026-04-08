@@ -6,15 +6,15 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { MotiView } from 'moti';
 import React, { useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Markdown from 'react-native-markdown-display';
+import { Alert, Dimensions, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { AIChatButton } from '../../src/components/ai-chat';
 import { useTheme } from '../../src/context/ThemeContext';
 import { AppDispatch, RootState } from '../../src/store';
-import { fetchModuleById, markModuleWatched, resummarizeModule } from '../../src/store/slices/learningSlice';
+import Markdown from 'react-native-markdown-display';
+import { fetchModuleById, resummarizeModule, completeModule, markModuleWatched } from '../../src/store/slices/learningSlice';
 
 const { width } = Dimensions.get('window');
 
@@ -28,7 +28,7 @@ const getYouTubeVideoId = (url: string): string | null => {
 // Simple context optimizer for small LLM models
 const optimizeContext = (module: any) => {
     const fillers = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'to', 'of', 'in', 'at', 'on', 'with', 'which', 'that', 'this', 'these', 'those', 'from', 'this', 'that']);
-
+    
     const extractKeywords = (text: string = '', limit: number = 20) => {
         const safeText = text || '';
         return safeText
@@ -69,19 +69,24 @@ export default function ModuleDetailScreen() {
     const { currentModules, learningPath, activeModule, loading, error } = useSelector((state: RootState) => state.learning);
 
     React.useEffect(() => {
-        if (id) {
+        if (id && id !== 'undefined') {
             dispatch(fetchModuleById(id as string));
+        } else if (id === 'undefined') {
+            // Safety fallback if navigation somehow received literal "undefined"
+            console.warn('[ModuleDetail] Invalid ID received, redirecting...');
+            router.replace('/(tabs)');
         }
     }, [id, dispatch]);
 
     const allModules = [...(currentModules || []), ...(learningPath?.modules || [])];
-    const pathModule = allModules.find(m => m.id === Number(id) || m.id === id);
+    const pathModule = allModules.find(m => (m.id === Number(id) || m.id === id));
     
-    // Merge activeModule with pathModule to preserve derived states like isLocked/isCompleted
+    // Merge detail data with path state (for isLocked/isCompleted)
     const module = activeModule && (activeModule.id === Number(id) || activeModule.id === id)
         ? { ...activeModule, ...pathModule }
         : pathModule;
-
+    
+    // Use the derived completion flag
     const isCompleted = module?.isCompleted === true;
 
     const handleStartLearning = () => {
@@ -283,7 +288,7 @@ export default function ModuleDetailScreen() {
 
                         {/* Instructional Banner */}
                         {!isCompleted && isStarted && (
-                            <MotiView
+                            <MotiView 
                                 from={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 className="bg-indigo-600 p-6 rounded-[32px] mb-10 shadow-xl shadow-indigo-200 relative overflow-hidden"
@@ -339,7 +344,7 @@ export default function ModuleDetailScreen() {
                                         <Text className="text-indigo-900 text-lg font-black">AI Summary</Text>
                                     </View>
                                     {!module.isLocked && (
-                                        <TouchableOpacity
+                                        <TouchableOpacity 
                                             onPress={handleResummarize}
                                             disabled={isResummarizing}
                                             className="w-10 h-10 rounded-full bg-white/50 items-center justify-center border border-indigo-100"
@@ -355,10 +360,14 @@ export default function ModuleDetailScreen() {
                                 {displaySummary ? (
                                     <Markdown
                                         style={{
-                                            body: { color: '#475569', fontSize: 16, lineHeight: 24, fontStyle: 'italic' },
+                                            body: { color: '#475569', fontSize: 16, lineHeight: 26, fontStyle: 'italic' },
                                             strong: { color: '#1e293b', fontWeight: 'bold' },
-                                            bullet_list: { marginTop: 10 },
-                                            list_item: { marginVertical: 4 }
+                                            paragraph: { marginVertical: 8 },
+                                            heading1: { color: '#1e293b', fontWeight: 'bold', marginTop: 16, marginBottom: 8 },
+                                            heading2: { color: '#1e293b', fontWeight: 'bold', marginTop: 14, marginBottom: 8 },
+                                            heading3: { color: '#1e293b', fontWeight: 'bold', marginTop: 12, marginBottom: 6 },
+                                            bullet_list: { marginVertical: 10 },
+                                            list_item: { marginVertical: 6 }
                                         }}
                                     >
                                         {displaySummary}
@@ -372,7 +381,7 @@ export default function ModuleDetailScreen() {
                         {/* Transcript Section */}
                         {!module.isLocked && module.transcript && (
                             <View className="mb-8 p-6 bg-slate-50 rounded-3xl border border-slate-200">
-                                <TouchableOpacity
+                                <TouchableOpacity 
                                     onPress={() => setShowTranscript(!showTranscript)}
                                     className="flex-row items-center justify-between"
                                     activeOpacity={0.7}
@@ -381,13 +390,13 @@ export default function ModuleDetailScreen() {
                                         <MaterialIcons name="description" size={20} color="#64748b" />
                                         <Text className="text-slate-900 text-lg font-black">Video Transcript</Text>
                                     </View>
-                                    <MaterialIcons
-                                        name={showTranscript ? "expand-less" : "expand-more"}
-                                        size={24}
-                                        color="#64748b"
-                                    />
+                                    <MaterialIcons 
+                                        name={showTranscript ? "expand-less" : "expand-more"} 
+                                        size={24} 
+                                        color="#64748b" 
+                                      />
                                 </TouchableOpacity>
-
+                                
                                 {showTranscript && (
                                     <MotiView
                                         from={{ opacity: 0, height: 0 }}
@@ -398,7 +407,10 @@ export default function ModuleDetailScreen() {
                                         <Markdown
                                             style={{
                                                 body: { color: '#475569', fontSize: 14, lineHeight: 22 },
-                                                strong: { color: '#0f172a', fontWeight: 'bold' }
+                                                strong: { color: '#0f172a', fontWeight: 'bold' },
+                                                paragraph: { marginVertical: 6 },
+                                                heading1: { color: '#0f172a', fontWeight: 'bold', marginTop: 12, marginBottom: 6 },
+                                                heading2: { color: '#0f172a', fontWeight: 'bold', marginTop: 10, marginBottom: 6 },
                                             }}
                                         >
                                             {module.transcript}
@@ -443,7 +455,7 @@ export default function ModuleDetailScreen() {
             </ScrollView>
 
             {/* STICKY BOTTOM BUTTON */}
-            <View
+            <View 
                 className="absolute bottom-0 left-0 right-0 bg-white/80 p-6 px-8 border-t border-slate-100"
                 style={{ paddingBottom: Math.max(insets.bottom, 24) }}
             >
@@ -457,14 +469,14 @@ export default function ModuleDetailScreen() {
                     <PrimaryButton
                         title={module.isLocked ? "Locked" : (isStarted ? "Assess My Learning" : `Start ${module.format === 'video' ? 'Watching' : 'Learning'}`)}
                         iconName={module.isLocked ? "lock" : (isStarted ? "assignment-turned-in" : (module.format === 'video' ? 'play-arrow' : 'auto-stories'))}
-                        onPress={module.isLocked ? () => { } : (isStarted ? () => router.push(`/modules/assessment/${id}`) : handleStartLearning)}
+                        onPress={module.isLocked ? () => {} : (isStarted ? () => router.push(`/modules/assessment/${id}`) : handleStartLearning)}
                         disabled={module.isLocked}
                     />
                 )}
             </View>
 
-            <AIChatButton
-                position={{ bottom: insets.bottom + 130, right: 20 }}
+            <AIChatButton 
+                position={{ bottom: insets.bottom + 130, right: 20 }} 
                 mode="adult"
                 context={optimizeContext(module)}
             />

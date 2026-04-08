@@ -1,5 +1,7 @@
 import { Paths, Directory, File } from 'expo-file-system';
-import { LLMModule, SpeechToTextModule, TokenizerModule, VADModule } from 'react-native-executorch';
+import * as FileSystem from 'expo-file-system/legacy';
+import { LLMModule, SpeechToTextModule, TokenizerModule, VADModule, initExecutorch } from 'react-native-executorch';
+import { ExpoResourceFetcher } from 'react-native-executorch-expo-resource-fetcher';
 
 /**
  * Interface representing an AI interaction result.
@@ -11,133 +13,126 @@ export interface ChatMessage {
     timestamp: number;
 }
 
-const CONFIG_FILE_NAME = 'ai_storage_config.json';
 const MODEL_DIR_NAME = 'ai_models';
 let isInitialized = false;
+let activeDownloadPromise: Promise<any> | null = null;
 
 /**
- * Service to handle on-device AI operations including 
- * Local LLM inference and Speech-to-Text using ExecuTorch.
+ * A local-first resource fetcher that handles absolute paths and file:// URIs.
+ * Bypasses the default fetcher's HEAD request which causes protocol errors.
+ */
+const CustomAIResourceFetcher = {
+    fetch: async (onProgress: (p: number) => void, ...sources: string[]) => {
+        // Since we ensure download before loading, we just return the paths without file:// for the native engine
+        onProgress(1);
+        return sources.map(s => s.startsWith('file://') ? s.replace('file://', '') : s);
+    },
+
+    readAsString: async (path: string) => {
+        const uri = path.startsWith('file://') ? path : `file://${path}`;
+        const file = new File(uri);
+        return await file.text();
+    }
+};
+
+/**
+ * Service to handle on-device AI operations.
  */
 export const aiService = {
   initialize: async () => {
     if (isInitialized) return;
     try {
-      const customPath = await aiService.getStoragePath();
-      
-      // If no custom path, ensure default model directory exists in documentDirectory
-      if (!customPath) {
-        const modelDir = new Directory(Paths.document, MODEL_DIR_NAME);
-        if (!modelDir.exists) {
-            await modelDir.create({ idempotent: true });
-        }
+      // Ensure the local model directory exists
+      const modelDir = new Directory(Paths.document, MODEL_DIR_NAME);
+      if (!modelDir.exists) {
+        await modelDir.create({ idempotent: true });
       }
       
+      initExecutorch({
+        resourceFetcher: CustomAIResourceFetcher as any
+      });
       isInitialized = true;
+      console.log('AI Service initialized (Local-First Fetcher).');
     } catch (error) {
-      console.error('Failed to initialize AI service directory:', error);
+      console.error('Failed to initialize AI service:', error);
     }
   },
 
   /**
-   * Checks for free space and downloads the model parts manually to ensure persistence
-   * and avoid the 'No space left' error caused by internal library movement.
+   * Downloads and prepares the model in INTERNAL storage.
    */
-  ensureModelDownloaded: async (modelConfig: any, onProgress?: (p: number) => void) => {
-    const customPath = await aiService.getStoragePath();
-    const baseDirUri = customPath || `${Paths.document.uri}${MODEL_DIR_NAME}/`;
-    
-    // 1. Dynamic space check based on model size
-    // Llama 3.2 1B is ~1.2GB, LFM 350M is ~300MB, SmollM 135M is ~150MB
-    let requiredBytes = 1.3 * 1024 * 1024 * 1024; // Default to 1.3GB
-    if (modelConfig.modelName?.includes('350m')) requiredBytes = 400 * 1024 * 1024;
-    if (modelConfig.modelName?.includes('135m')) requiredBytes = 200 * 1024 * 1024;
-    if (modelConfig.modelName?.includes('0.5b')) requiredBytes = 600 * 1024 * 1024;
+  ensureModelDownloaded: async (modelConfig: any, onProgress?: (p: number, status: string) => void) => {
+    if (activeDownloadPromise) {
+        console.log('Download already active, joining task...');
+        return activeDownloadPromise;
+    }
 
-    const freeSpace = Paths.availableDiskSpace;
-    
-    const filesToDownload = [
-        { key: 'modelSource', url: modelConfig.modelSource },
-        { key: 'tokenizerSource', url: modelConfig.tokenizerSource },
-        { key: 'tokenizerConfigSource', url: modelConfig.tokenizerConfigSource },
-    ];
-
-    const localPaths: any = { ...modelConfig };
-    let completedFiles = 0;
-
-    for (const file of filesToDownload) {
-        const fileName = typeof file.url === 'string' ? file.url.split('/').pop()! : `file_${file.key}`;
-        
-        // Create a File instance for the target location
-        const targetFile = new File(baseDirUri, fileName);
-        
-        if (targetFile.exists) {
-            console.log(`File already exists: ${fileName}`);
-            localPaths[file.key] = targetFile.uri;
-            completedFiles++;
-            continue;
-        }
-
-        // Only check space if we actually need to download something
-        if (freeSpace < requiredBytes) {
-            throw new Error(`Insufficient storage. Need ~1.3GB, but only ${Math.round(freeSpace / 1024 / 1024)}MB available.`);
-        }
-
-        console.log(`Downloading ${fileName}...`);
-        
+    activeDownloadPromise = (async () => {
         try {
-            // Use the new static download method
-            const downloaded = await File.downloadFileAsync(
-                file.url,
-                targetFile,
-                { idempotent: true }
-            );
-            
-            localPaths[file.key] = downloaded.uri;
-            completedFiles++;
-            
-            // Basic progress reporting (per file)
-            onProgress?.(completedFiles / filesToDownload.length);
-        } catch (error) {
-            console.error(`Download failed for ${fileName}:`, error);
-            throw error;
-        }
-    }
+            const internalDir = new Directory(Paths.document, MODEL_DIR_NAME);
+            if (!internalDir.exists) await internalDir.create();
 
-    return localPaths;
+            const fileName = (url: string) => url.split('/').pop() || 'model_part';
+            const sources = [
+                { url: modelConfig.modelSource, key: 'modelSource' },
+                { url: modelConfig.tokenizerSource, key: 'tokenizerSource' },
+                { url: modelConfig.tokenizerConfigSource, key: 'tokenizerConfigSource' }
+            ];
+
+            const updatedConfig = { ...modelConfig };
+            let totalFiles = sources.length;
+
+            for (let i = 0; i < sources.length; i++) {
+                const item = sources[i];
+                if (typeof item.url !== 'string') continue;
+
+                const name = fileName(item.url);
+                const targetFile = new File(internalDir, name);
+                
+                if (targetFile.exists) {
+                    console.log(`Using cached: ${name}`);
+                    updatedConfig[item.key] = targetFile.uri;
+                    continue;
+                }
+
+                console.log(`Downloading ${name} to internal storage...`);
+                const downloadResumable = FileSystem.createDownloadResumable(
+                    item.url,
+                    targetFile.uri,
+                    {},
+                    (downloadProgress) => {
+                        const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+                        const overallProgress = (i + progress) / totalFiles;
+                        onProgress?.(overallProgress, `Downloading ${name}... ${Math.round(progress * 100)}%`);
+                    }
+                );
+
+                const result = await downloadResumable.downloadAsync();
+                if (!result) throw new Error(`Download of ${name} failed.`);
+                
+                updatedConfig[item.key] = result.uri;
+            }
+
+            onProgress?.(1, 'AI weights ready!');
+            return updatedConfig;
+        } catch (error) {
+            console.error('Internal download failed:', error);
+            throw error;
+        } finally {
+            activeDownloadPromise = null;
+        }
+    })();
+
+    return activeDownloadPromise;
   },
 
-  /**
-   * Allows the user to pick a custom directory for AI model storage using modern API.
-   */
   pickCustomDirectory: async () => {
-    try {
-      const directory = await Directory.pickDirectoryAsync();
-      if (directory) {
-        const configFile = new File(Paths.document, CONFIG_FILE_NAME);
-        await configFile.write(JSON.stringify({ path: directory.uri }));
-        console.log('User selected custom directory:', directory.uri);
-        return directory.uri;
-      }
-      return null;
-    } catch (error) {
-      console.error('Error picking directory:', error);
-      return null;
-    }
+    // Kept as no-op to avoid breaking UI if called, but we no longer use external
+    return null;
   },
 
   getStoragePath: async () => {
-    try {
-        const configFile = new File(Paths.document, CONFIG_FILE_NAME);
-        if (configFile.exists) {
-            const content = await configFile.text();
-            const config = JSON.parse(content);
-            return config.path;
-        }
-    } catch (e) {
-        console.log('No custom storage config found.');
-    }
-    return null;
+    return new Directory(Paths.document, MODEL_DIR_NAME).uri;
   },
 
   /**
@@ -145,38 +140,20 @@ export const aiService = {
    */
   resetStoragePath: async () => {
     try {
-        const configFile = new File(Paths.document, CONFIG_FILE_NAME);
-        if (configFile.exists) {
-            await configFile.delete();
-        }
-        isInitialized = false;
-        await aiService.initialize();
+        const modelDir = new Directory(Paths.document, MODEL_DIR_NAME);
+        if (modelDir.exists) await modelDir.delete();
+        await modelDir.create();
     } catch (e) {
-        console.error('Error resetting storage path:', e);
+        console.error('Error resetting models:', e);
     }
   },
 
   /**
    * Returns a model configuration that uses the custom storage path if available.
-   * This allows caching the model in a user-selected folder and reusing it.
+   * This is used to check if we can skip the download.
    */
   getCustomModelConfig: (baseModel: any, customPath: string | null) => {
-    if (!customPath) return baseModel;
-
-    // Helper to get filename from source URL
-    const getFileName = (source: string | any) => {
-      if (typeof source === 'string') {
-        return source.split('/').pop() || 'file';
-      }
-      return 'model_file';
-    };
-
-    return {
-      ...baseModel,
-      modelSource: `${customPath}${getFileName(baseModel.modelSource)}`,
-      tokenizerSource: `${customPath}${getFileName(baseModel.tokenizerSource)}`,
-      tokenizerConfigSource: `${customPath}${getFileName(baseModel.tokenizerConfigSource)}`,
-    };
+    return baseModel;
   },
 
   /**

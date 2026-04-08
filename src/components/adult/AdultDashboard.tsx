@@ -19,9 +19,9 @@ const ModuleLockModal = ({ visible, onClose, module }: any) => {
             animationType="fade"
             onRequestClose={onClose}
         >
-            <TouchableOpacity 
-                activeOpacity={1} 
-                onPress={onClose} 
+            <TouchableOpacity
+                activeOpacity={1}
+                onPress={onClose}
                 className="flex-1 items-center justify-center p-6 bg-black/60"
             >
                 <MotiView
@@ -341,25 +341,22 @@ export const AdultDashboard = ({ insets, router, dispatch, colors, user, learnin
                     iconName="bolt"
                     onPress={() => {
                         // Priority 1: First unlocked module that hasn't been completed yet
-                        let nextModule = modules.find((m: any) => !m.isLocked && !m.isCompleted);
-                        
-                        // Priority 2: If everything uncompleted is locked, or everything is done, 
-                        // just find any unlocked one to let them revisit
-                        if (!nextModule) {
-                            nextModule = modules.find((m: any) => !m.isLocked);
-                        }
+                        const nextModule = modules.find((m: any) => !m.isCompleted && m.id);
 
-                        if (nextModule) {
+                        if (nextModule && nextModule.id) {
                             router.push(`/modules/${nextModule.id}` as any);
+                        } else if (modules.length > 0 && modules[0].id) {
+                            // Fallback to first module
+                            router.push(`/modules/${modules[0].id}` as any);
                         }
                     }}
                 />
             </View>
 
-            <ModuleLockModal 
-                visible={lockModalVisible} 
-                onClose={() => setLockModalVisible(false)} 
-                module={selectedModule} 
+            <ModuleLockModal
+                visible={lockModalVisible}
+                onClose={() => setLockModalVisible(false)}
+                module={selectedModule}
             />
 
             <AIChatButton position={{ bottom: insets.bottom + 90, right: 20 }} />

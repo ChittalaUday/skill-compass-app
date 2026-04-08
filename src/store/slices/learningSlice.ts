@@ -122,19 +122,15 @@ const processSequentialLocking = (modules: any[]) => {
     let firstIncompleteFound = false;
     
     return sorted.map((m, index) => {
-        // Explicitly check for completion: prioritize user-specific progress flags
+        // A module is considered done if its user-specific status is 'completed'
+        // We set isCompleted as a separate flag for the UI
         const isDone = m.userStatus === 'completed' || m.isCompleted === true;
         
-        let isLocked = false;
-        if (index === 0) {
-            isLocked = false; // First is always open
-        } else {
-            // Unlocked only if all previous were completed
-            isLocked = firstIncompleteFound;
-        }
+        // A module is locked if any previous module was not completed
+        const isLocked = index === 0 ? false : firstIncompleteFound;
         
-        // ONLY consider "userStatus": "pending" and "isCompleted": false for locking subsequent modules
-        if (m.userStatus === 'pending' && m.isCompleted === false) {
+        // If this module is not done, all subsequent modules must be locked
+        if (!isDone) {
             firstIncompleteFound = true;
         }
         
