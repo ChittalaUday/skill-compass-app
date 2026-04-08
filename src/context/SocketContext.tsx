@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { io, Socket } from 'socket.io-client';
@@ -20,7 +21,19 @@ interface SocketProviderProps {
     children: ReactNode;
 }
 
-const SOCKET_URL = 'http://13.239.60.116:5003';
+// Get Socket URL from runtime config
+const getSocketUrl = () => {
+  const extra = Constants.expoConfig?.extra || {};
+  return (
+    extra.EXPO_PUBLIC_SOCKET_URL || 
+    process.env.EXPO_PUBLIC_SOCKET_URL || 
+    'http://51.20.182.252:5003'
+  );
+};
+
+const SOCKET_URL = getSocketUrl();
+
+console.log('[Socket] Using SOCKET_URL:', SOCKET_URL);
 
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     const [socket, setSocket] = useState<Socket | null>(null);

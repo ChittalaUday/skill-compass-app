@@ -1,8 +1,20 @@
 import axios from 'axios';
+import Constants from 'expo-constants';
+import { showToast } from '../utils/toast';
 
-// Get API URL from environment variables
-const BASE_URL =
-    process.env.EXPO_PUBLIC_API_URL || 'https://api.example.com/v1';
+// Get API URL - use Constants.expoConfig for runtime availability in APK
+const getBaseUrl = () => {
+  const extra = Constants.expoConfig?.extra || {};
+  return (
+    extra.EXPO_PUBLIC_API_URL || 
+    process.env.EXPO_PUBLIC_API_URL || 
+    'http://51.20.182.252:5003/api'
+  );
+};
+
+const BASE_URL = getBaseUrl();
+
+console.log('[API Client] Using BASE_URL:', BASE_URL);
 
 const client = axios.create({
     baseURL: BASE_URL,
@@ -16,11 +28,6 @@ const client = axios.create({
 // Request interceptor
 client.interceptors.request.use(
     async (config) => {
-        // In a real app, you would retrieve the token from SecureStore here
-        // const token = await SecureStore.getItemAsync('user_token');
-        // if (token) {
-        //   config.headers.Authorization = `Bearer ${token}`;
-        // }
         return config;
     },
     (error) => {
@@ -32,11 +39,19 @@ client.interceptors.request.use(
 client.interceptors.response.use(
     (response) => response,
     (error) => {
-        // Handle specific errors like 401 Unauthorized here
+        const message = error.response?.data?.message || error.message || 'Something went wrong';
+        
+        // Show toast for errors
+        showToast(message, {
+            status: 'error',
+            title: error.response?.status ? `Error ${error.response.status}` : 'Network Error',
+        });
+
+        // Specific handling for 401
         if (error.response?.status === 401) {
-            // Dispatch logout action or refresh token
             console.warn('Unauthorized access');
         }
+        
         return Promise.reject(error);
     }
 );

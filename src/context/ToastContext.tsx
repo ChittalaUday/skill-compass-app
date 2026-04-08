@@ -1,5 +1,6 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { CustomToast } from '../components/CustomToast';
+import { toastManager } from '../utils/toast';
 
 export type ToastStatus = 'success' | 'error' | 'info' | 'warning';
 
@@ -39,6 +40,13 @@ export const ToastProvider = ({ children }: { children: React.ReactNode }) => {
     }, []);
 
     const hideToast = useCallback(() => setVisible(false), []);
+
+    useEffect(() => {
+        const unsubscribe = toastManager.subscribe((msg, options) => {
+            showToast(msg, options);
+        });
+        return () => { unsubscribe(); };
+    }, [showToast]);
 
     return (
         <ToastContext.Provider value={{ showToast, hideToast }}>

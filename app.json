@@ -22,7 +22,15 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.udayniruthi.skillcompassapp",
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "networkSecurityConfig": {
+        "domainConfig": [
+          {
+            "domain": "51.20.182.252",
+            "cleartextTrafficPermitted": true
+          }
+        ]
+      }
     },
     "web": {
       "output": "static",
