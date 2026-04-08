@@ -11,13 +11,21 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
+import { PersistGate } from 'redux-persist/integration/react';
 import "../global.css";
 import CustomSplashScreen from '../src/components/CustomSplashScreen';
 import { SocketProvider } from '../src/context/SocketContext';
 import { ThemeProvider as AppThemeProvider } from '../src/context/ThemeContext';
 import { ToastProvider } from '../src/context/ToastContext';
 import { apolloClient } from '../src/services/graphqlClient';
-import { store } from '../src/store';
+import { store, persistor } from '../src/store';
+import { initExecutorch } from 'react-native-executorch';
+import { ExpoResourceFetcher } from 'react-native-executorch-expo-resource-fetcher';
+import { aiService } from '../src/services/aiService';
+
+initExecutorch({
+  resourceFetcher: ExpoResourceFetcher,
+});
 
 configureReanimatedLogger({ level: ReanimatedLogLevel.warn, strict: false });
 
@@ -30,6 +38,9 @@ LogBox.ignoreLogs([
 ]);
 
 export default function RootLayout() {
+  useEffect(() => {
+    aiService.initialize();
+  }, []);
 
   const [loaded] = useFonts({
     PlusJakartaSans_400Regular,
@@ -54,31 +65,33 @@ export default function RootLayout() {
 
   return (
     <Provider store={store}>
-      <ApolloProvider client={apolloClient}>
-        <SafeAreaProvider>
-          <ThemeProvider value={DefaultTheme}>
-            <AppThemeProvider>
-              <ToastProvider>
-                <SocketProvider>
-                  <GestureHandlerRootView style={{ flex: 1 }}>
-                    <KeyboardProvider>
-                      <Stack screenOptions={{
-                        headerShown: false,
-                        contentStyle: { backgroundColor: '#fafaf9' },
-                        animation: 'fade_from_bottom',
-                      }} />
-                      {!isSplashFinished && (
-                        <CustomSplashScreen onFinish={() => setIsSplashFinished(true)} />
-                      )}
-                    </KeyboardProvider>
-                  </GestureHandlerRootView>
-                  <StatusBar style="auto" />
-                </SocketProvider>
-              </ToastProvider>
-            </AppThemeProvider>
-          </ThemeProvider>
-        </SafeAreaProvider>
-      </ApolloProvider>
+      <PersistGate loading={null} persistor={persistor}>
+        <ApolloProvider client={apolloClient}>
+          <SafeAreaProvider>
+            <ThemeProvider value={DefaultTheme}>
+              <AppThemeProvider>
+                <ToastProvider>
+                  <SocketProvider>
+                    <GestureHandlerRootView style={{ flex: 1 }}>
+                      <KeyboardProvider>
+                        <Stack screenOptions={{
+                          headerShown: false,
+                          contentStyle: { backgroundColor: '#fafaf9' },
+                          animation: 'fade_from_bottom',
+                        }} />
+                        {!isSplashFinished && (
+                          <CustomSplashScreen onFinish={() => setIsSplashFinished(true)} />
+                        )}
+                      </KeyboardProvider>
+                    </GestureHandlerRootView>
+                    <StatusBar style="auto" />
+                  </SocketProvider>
+                </ToastProvider>
+              </AppThemeProvider>
+            </ThemeProvider>
+          </SafeAreaProvider>
+        </ApolloProvider>
+      </PersistGate>
     </Provider>
   );
 }

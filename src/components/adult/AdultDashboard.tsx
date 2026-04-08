@@ -2,14 +2,55 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MotiView } from 'moti';
-import React from 'react';
-import { ActivityIndicator, Dimensions, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Dimensions, Image, Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { AIChatButton } from '../ai-chat';
 import { PrimaryButton } from '../PrimaryButton';
 
 const { width } = Dimensions.get('window');
 
-const DashboardHeader = ({ user, colors, onRegenerate, isRegenerating, onProfilePress }: any) => {
+const ModuleLockModal = ({ visible, onClose, module }: any) => {
+    if (!visible) return null;
+
+    return (
+        <Modal
+            transparent
+            visible={visible}
+            animationType="fade"
+            onRequestClose={onClose}
+        >
+            <TouchableOpacity 
+                activeOpacity={1} 
+                onPress={onClose} 
+                className="flex-1 items-center justify-center p-6 bg-black/60"
+            >
+                <MotiView
+                    from={{ opacity: 0, scale: 0.9, translateY: 20 }}
+                    animate={{ opacity: 1, scale: 1, translateY: 0 }}
+                    className="bg-white rounded-[40px] p-8 w-full shadow-2xl items-center"
+                >
+                    <View className="w-20 h-20 bg-amber-50 rounded-3xl items-center justify-center mb-6 shadow-sm border border-amber-100">
+                        <Ionicons name="lock-closed" size={40} color="#D97706" />
+                    </View>
+
+                    <Text className="text-2xl font-black text-slate-900 mb-3 text-center">Module Locked</Text>
+                    <Text className="text-slate-500 text-center font-medium leading-relaxed mb-10 px-4 text-base">
+                        Finish your current lessons first! This module will automatically unlock once you're ready for it.
+                    </Text>
+
+                    <TouchableOpacity
+                        onPress={onClose}
+                        className="bg-slate-900 w-full py-5 rounded-2xl items-center shadow-lg active:scale-95"
+                    >
+                        <Text className="text-white font-black text-lg">Got it, Captain!</Text>
+                    </TouchableOpacity>
+                </MotiView>
+            </TouchableOpacity>
+        </Modal>
+    );
+};
+
+const DashboardHeader = ({ user, colors, onRegenerate, isRegenerating, onProfilePress, totalXP = 0 }: any) => {
     return (
         <MotiView
             from={{ opacity: 0, translateY: -20 }}
@@ -59,7 +100,7 @@ const DashboardHeader = ({ user, colors, onRegenerate, isRegenerating, onProfile
             <View className="bg-slate-900 px-4 py-2 rounded-full flex-row items-center gap-2 shadow-lg">
                 <MaterialIcons name="bolt" size={18} color="#facc15" />
                 <Text className="text-white font-black text-sm uppercase tracking-wider">
-                    2,450 XP
+                    {totalXP.toLocaleString()} XP
                 </Text>
             </View>
         </MotiView>
@@ -110,7 +151,7 @@ const FeaturedCard = ({ learningPath, colors }: any) => {
 };
 
 const ModuleItem = ({ module, index, isLast, colors, onPress }: any) => {
-    const isLocked = index > 0;
+    const isLocked = module.isLocked;
 
     return (
         <View className="flex-row px-6 mb-2">
@@ -132,7 +173,7 @@ const ModuleItem = ({ module, index, isLast, colors, onPress }: any) => {
                 <TouchableOpacity
                     activeOpacity={0.9}
                     onPress={onPress}
-                    className={`bg-white/60 rounded-3xl overflow-hidden border border-white shadow-sm ${isLocked ? 'opacity-60' : ''}`}
+                    className={`bg-white/60 rounded-3xl overflow-hidden border border-white shadow-sm ${isLocked ? 'opacity-70' : ''}`}
                 >
                     <BlurView intensity={20} tint="light" className="absolute inset-0" />
                     <View className="h-44 w-full bg-slate-200 relative">
@@ -140,10 +181,18 @@ const ModuleItem = ({ module, index, isLast, colors, onPress }: any) => {
                             source={{ uri: module.thumbnailUrl || 'https://picsum.photos/400/200' }}
                             className="w-full h-full"
                         />
-                        <LinearGradient
-                            colors={['transparent', 'rgba(0,0,0,0.7)']}
-                            className="absolute bottom-0 left-0 right-0 h-24"
-                        />
+                        {isLocked ? (
+                            <BlurView intensity={40} tint="dark" className="absolute inset-0 items-center justify-center">
+                                <View className="bg-white/10 w-16 h-16 rounded-full items-center justify-center border border-white/20">
+                                    <Ionicons name="lock-closed" size={28} color="white" />
+                                </View>
+                            </BlurView>
+                        ) : (
+                            <LinearGradient
+                                colors={['transparent', 'rgba(0,0,0,0.7)']}
+                                className="absolute bottom-0 left-0 right-0 h-24"
+                            />
+                        )}
 
                         <View className="absolute bottom-4 left-4 flex-row gap-2">
                             <BlurView intensity={30} tint="dark" className="px-2 py-1 rounded-md flex-row items-center gap-1 overflow-hidden">
@@ -184,6 +233,23 @@ const ModuleItem = ({ module, index, isLast, colors, onPress }: any) => {
 };
 
 export const AdultDashboard = ({ insets, router, dispatch, colors, user, learningPath, loading, modules, onProfilePress, onRegenerate, onFetchPath }: any) => {
+    const [lockModalVisible, setLockModalVisible] = useState(false);
+    const [selectedModule, setSelectedModule] = useState<any>(null);
+
+    // Calculate XP based on duration of completed modules
+    const completedXP = modules.reduce((acc: number, mod: any) => {
+        return mod.isCompleted ? acc + (Number(mod.duration) || 0) : acc;
+    }, 0);
+
+    const handleModulePress = (module: any) => {
+        if (module.isLocked) {
+            setSelectedModule(module);
+            setLockModalVisible(true);
+        } else {
+            router.push(`/modules/${module.id}` as any);
+        }
+    };
+
     return (
         <View className="flex-1 bg-slate-50">
             <ScrollView
@@ -199,6 +265,7 @@ export const AdultDashboard = ({ insets, router, dispatch, colors, user, learnin
                     onRegenerate={onRegenerate}
                     isRegenerating={loading}
                     onProfilePress={onProfilePress}
+                    totalXP={completedXP}
                 />
 
                 <FeaturedCard learningPath={learningPath} colors={colors} />
@@ -209,8 +276,10 @@ export const AdultDashboard = ({ insets, router, dispatch, colors, user, learnin
                     </Text>
                 </View>
 
+                {/* Rest of the component (Generation Failed / Modules List / Crafts Status) */}
                 {learningPath?.status === 'failed' ? (
                     <View className="px-6 mb-8">
+                        {/* ... */}
                         <View className="bg-red-50 p-6 rounded-3xl border border-red-100 items-center">
                             <View className="w-16 h-16 bg-red-100 rounded-2xl items-center justify-center mb-4">
                                 <MaterialIcons name="error-outline" size={32} color="#ef4444" />
@@ -239,12 +308,12 @@ export const AdultDashboard = ({ insets, router, dispatch, colors, user, learnin
                 ) : modules.length > 0 ? (
                     modules.map((module: any, index: number) => (
                         <ModuleItem
-                            key={module.id}
+                            key={module.id || index}
                             module={module}
                             index={index}
                             isLast={index === modules.length - 1}
                             colors={colors}
-                            onPress={() => router.push(`/modules/${module.id}` as any)}
+                            onPress={() => handleModulePress(module)}
                         />
                     ))
                 ) : (
@@ -270,9 +339,28 @@ export const AdultDashboard = ({ insets, router, dispatch, colors, user, learnin
                 <PrimaryButton
                     title="Continue Learning"
                     iconName="bolt"
-                    onPress={() => modules[0] && router.push(`/modules/${modules[0].id}` as any)}
+                    onPress={() => {
+                        // Priority 1: First unlocked module that hasn't been completed yet
+                        let nextModule = modules.find((m: any) => !m.isLocked && !m.isCompleted);
+                        
+                        // Priority 2: If everything uncompleted is locked, or everything is done, 
+                        // just find any unlocked one to let them revisit
+                        if (!nextModule) {
+                            nextModule = modules.find((m: any) => !m.isLocked);
+                        }
+
+                        if (nextModule) {
+                            router.push(`/modules/${nextModule.id}` as any);
+                        }
+                    }}
                 />
             </View>
+
+            <ModuleLockModal 
+                visible={lockModalVisible} 
+                onClose={() => setLockModalVisible(false)} 
+                module={selectedModule} 
+            />
 
             <AIChatButton position={{ bottom: insets.bottom + 90, right: 20 }} />
         </View>

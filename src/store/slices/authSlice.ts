@@ -112,7 +112,6 @@ const authSlice = createSlice({
             state.token = null;
             state.isAuthenticated = false;
             state.error = null;
-            removeAuthToken(); // Side effect: remove token from storage
         },
         setToken: (state, action: PayloadAction<string>) => {
             state.token = action.payload;

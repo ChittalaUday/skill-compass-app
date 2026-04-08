@@ -10,9 +10,10 @@ interface AIChatButtonProps {
         bottom?: number;
         right?: number;
     };
+    context?: string;
 }
 
-export const AIChatButton = ({ mode = 'adult', position = { bottom: 20, right: 20 } }: AIChatButtonProps) => {
+export const AIChatButton = ({ mode = 'adult', position = { bottom: 20, right: 20 }, context }: AIChatButtonProps) => {
     const [isModalVisible, setIsModalVisible] = useState(false);
 
     return (
@@ -55,6 +56,7 @@ export const AIChatButton = ({ mode = 'adult', position = { bottom: 20, right: 2
                 visible={isModalVisible}
                 onClose={() => setIsModalVisible(false)}
                 mode={mode}
+                context={context}
             />
         </View>
     );

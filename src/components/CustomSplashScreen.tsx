@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
+import * as Network from 'expo-network';
 import { jwtDecode, JwtPayload } from "jwt-decode";
 import React, { useEffect } from 'react';
 import { Dimensions, StyleSheet, Text, View } from 'react-native';
@@ -10,10 +11,10 @@ import Animated, {
     useSharedValue,
     withTiming
 } from 'react-native-reanimated';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useOnboardingRedirect } from '../hooks/useOnboardingRedirect';
 import { setAuthToken } from '../services/api';
-import { AppDispatch } from '../store';
+import { AppDispatch, RootState } from '../store';
 import { checkOnboardingStatus, setToken } from '../store/slices/authSlice';
 
 interface MyTokenPayload extends JwtPayload {
@@ -37,6 +38,7 @@ export default function CustomSplashScreen({ onFinish }: CustomSplashScreenProps
     const dispatch = useDispatch<AppDispatch>();
     const router = useRouter();
     const { performRedirect } = useOnboardingRedirect();
+    const { learningPath } = useSelector((state: RootState) => state.learning);
 
     useEffect(() => {
         // Start entrance animation
@@ -49,14 +51,40 @@ export default function CustomSplashScreen({ onFinish }: CustomSplashScreenProps
 
         const checkTokenAndRedirect = async () => {
             try {
+                const networkState = await Network.getNetworkStateAsync();
+                const isOnline = networkState.isConnected && networkState.isInternetReachable !== false;
+                
                 const token = await SecureStore.getItemAsync('authToken');
-                console.log('🔑 [SPLASH] Token found:', token ? 'YES' : 'NO');
+                console.log('🔑 [SPLASH] Token found:', token ? 'YES' : 'NO', 'Online:', isOnline);
 
                 if (!token) {
                     console.log('❌ [SPLASH] No token found, redirecting to login');
                     setTimeout(() => {
                         opacity.value = withTiming(0, { duration: 500 }, (finished) => {
                             if (finished) runOnJS(handleFinish)('/(auth)/login');
+                        });
+                    }, SPLASH_DURATION);
+                    return;
+                }
+
+                // If offline but we have a token, we skip the API check and assume previous state is valid (rehydrated by Redux Persist)
+                if (!isOnline) {
+                    console.log('📶 [SPLASH] Offline mode: Checking for cached data...');
+                    const handleOfflineRedirect = () => {
+                        onFinish();
+                        // Only redirect to tabs if we actually have data, otherwise login/onboarding
+                        if (learningPath) {
+                            console.log('✅ [SPLASH] Cached data found, redirecting to dashboard');
+                            router.replace('/(tabs)');
+                        } else {
+                            console.log('❌ [SPLASH] No cached data found, redirecting to login');
+                            router.replace('/(auth)/login');
+                        }
+                    };
+
+                    setTimeout(() => {
+                        opacity.value = withTiming(0, { duration: 500 }, (finished) => {
+                            if (finished) runOnJS(handleOfflineRedirect)();
                         });
                     }, SPLASH_DURATION);
                     return;
@@ -120,7 +148,7 @@ export default function CustomSplashScreen({ onFinish }: CustomSplashScreenProps
                     const errorMessage = (actionResult.payload as string) || (actionResult.error?.message as string) || '';
                     console.error('❌ [SPLASH] Failed to fetch status:', errorMessage);
 
-                    // Check for specific "Age is required" error
+                    // PRIORITY 1: Application logic errors (Age selection, etc)
                     if (errorMessage.includes('Age is required')) {
                         console.log('👉 [SPLASH] Age missing, redirecting to age selection');
 
@@ -142,7 +170,20 @@ export default function CustomSplashScreen({ onFinish }: CustomSplashScreenProps
                         return;
                     }
 
-                    // If other fetch fails (401, etc), redirect to login
+                    // PRIORITY 2: Network error bypass (ONLY if we have learning path data)
+                    if (errorMessage.toLowerCase().includes('network') || errorMessage.toLowerCase().includes('fail')) {
+                         console.log('📶 [SPLASH] API failed with network error, checking for cached data...');
+                         if (learningPath) {
+                             console.log('✅ [SPLASH] Cached data found, offline bypass enabled');
+                             onFinish();
+                             router.replace('/(tabs)');
+                             return;
+                         } else {
+                             console.log('❌ [SPLASH] No cached data, cannot bypass network error');
+                         }
+                    }
+
+                    // Priority 3: Fallback (Auth error, etc)
                     await SecureStore.deleteItemAsync('authToken');
                     setTimeout(() => {
                         opacity.value = withTiming(0, { duration: 500 }, (finished) => {
@@ -151,8 +192,18 @@ export default function CustomSplashScreen({ onFinish }: CustomSplashScreenProps
                     }, SPLASH_DURATION);
                 }
 
-            } catch (error) {
+            } catch (error: any) {
                 console.error('Splash screen error:', error);
+                
+                // If it's likely a network error, check for cache
+                if (error?.message?.toLowerCase().includes('network')) {
+                    if (learningPath) {
+                        onFinish();
+                        router.replace('/(tabs)');
+                        return;
+                    }
+                }
+
                 setTimeout(() => {
                     opacity.value = withTiming(0, { duration: 500 }, (finished) => {
                         if (finished) runOnJS(handleFinish)('/(auth)/login');
@@ -163,7 +214,7 @@ export default function CustomSplashScreen({ onFinish }: CustomSplashScreenProps
 
         checkTokenAndRedirect();
 
-    }, [opacity, scale, onFinish]);
+    }, [opacity, scale, onFinish, learningPath]);
 
     const animatedStyle = useAnimatedStyle(() => {
         return {

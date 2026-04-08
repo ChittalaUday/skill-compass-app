@@ -99,14 +99,78 @@ export const fetchModuleById = createAsyncThunk('learning/fetchModuleById', asyn
     } catch (err: any) { return rejectWithValue(extractErrorMessage(err)); }
 });
 
+export const completeModule = createAsyncThunk('learning/completeModule', async ({ moduleId, testResults }: { moduleId: number | string, testResults: any }, { rejectWithValue }) => {
+    try {
+        const response = await api.post(`/learning-progress/module/${moduleId}/complete`, { testResults });
+        return response.data;
+    } catch (err: any) { return rejectWithValue(extractErrorMessage(err)); }
+});
+
+export const resummarizeModule = createAsyncThunk('learning/resummarize', async (moduleId: string, { rejectWithValue }) => {
+    try {
+        const response = await api.post(`/learning-path/modules/${moduleId}/resummarize`);
+        return response.data.body;
+    } catch (err: any) { return rejectWithValue(extractErrorMessage(err)); }
+});
+
+const processSequentialLocking = (modules: any[]) => {
+    if (!modules || modules.length === 0) return [];
+    
+    // Sort by orderInPath to ensure sequence
+    const sorted = [...modules].sort((a, b) => (a.orderInPath || 0) - (b.orderInPath || 0));
+    
+    let firstIncompleteFound = false;
+    
+    return sorted.map((m, index) => {
+        // Explicitly check for completion: prioritize user-specific progress flags
+        const isDone = m.userStatus === 'completed' || m.isCompleted === true;
+        
+        let isLocked = false;
+        if (index === 0) {
+            isLocked = false; // First is always open
+        } else {
+            // Unlocked only if all previous were completed
+            isLocked = firstIncompleteFound;
+        }
+        
+        // ONLY consider "userStatus": "pending" and "isCompleted": false for locking subsequent modules
+        if (m.userStatus === 'pending' && m.isCompleted === false) {
+            firstIncompleteFound = true;
+        }
+        
+        return {
+            ...m,
+            isCompleted: isDone,
+            isLocked: isLocked
+        };
+    });
+};
+
 const learningSlice = createSlice({
     name: 'learning',
     initialState,
     reducers: {
         setLearningPath: (state, action) => {
-            state.learningPath = action.payload;
-            state.pathStatus = 'COMPLETED'; // Assuming this status
+            state.learningPath = {
+                ...action.payload,
+                modules: processSequentialLocking(action.payload.modules)
+            };
+            state.pathStatus = 'COMPLETED';
         },
+        markModuleWatched: (state, action: { payload: { moduleId: number | string } }) => {
+            const { moduleId } = action.payload;
+            if (state.activeModule && (state.activeModule.id === moduleId)) {
+                state.activeModule.isWatched = true;
+            }
+            state.currentModules = state.currentModules.map(m => 
+                m.id === moduleId ? { ...m, isWatched: true } : m
+            );
+            if (state.learningPath?.modules) {
+                state.learningPath.modules = state.learningPath.modules.map((m: any) => 
+                    m.id === moduleId ? { ...m, isWatched: true } : m
+                );
+            }
+        }
     },
     extraReducers: (builder) => {
         const handlePending = (state: LearningState) => { state.loading = true; state.error = null; };
@@ -119,24 +183,63 @@ const learningSlice = createSlice({
 
         builder.addCase(fetchMyLearningPath.fulfilled, (state, action) => {
             state.loading = false;
-            state.learningPath = action.payload;
-            state.pathStatus = action.payload?.status || null;
+            if (action.payload) {
+                state.learningPath = {
+                    ...action.payload,
+                    modules: processSequentialLocking(action.payload.modules)
+                };
+                state.pathStatus = action.payload?.status || null;
+            }
         });
 
         builder.addCase(regeneratePath.fulfilled, (state, action) => {
             state.loading = false;
-            state.learningPath = action.payload;
-            state.pathStatus = action.payload?.status || null;
+            if (action.payload) {
+                state.learningPath = {
+                    ...action.payload,
+                    modules: processSequentialLocking(action.payload.modules)
+                };
+                state.pathStatus = action.payload?.status || null;
+            }
         });
 
         builder.addCase(fetchModules.fulfilled, (state, action) => {
             state.loading = false;
-            state.currentModules = action.payload;
+            state.currentModules = processSequentialLocking(action.payload);
         });
 
         builder.addCase(fetchModuleById.fulfilled, (state, action) => {
             state.loading = false;
             state.activeModule = action.payload;
+        });
+
+        builder.addCase(resummarizeModule.fulfilled, (state, action) => {
+            state.loading = false;
+            state.activeModule = action.payload;
+        });
+
+        builder.addCase(completeModule.fulfilled, (state, action) => {
+            state.loading = false;
+            const moduleId = action.meta.arg.moduleId;
+
+            if (state.activeModule && (state.activeModule.id == moduleId)) {
+                state.activeModule.status = 'completed';
+                state.activeModule.isCompleted = true;
+                state.activeModule.userStatus = 'completed';
+            }
+
+            const updateList = (modules: any[]) => {
+                const updated = modules.map(m => 
+                    m.id == moduleId ? { ...m, isCompleted: true, userStatus: 'completed' } : m
+                );
+                return processSequentialLocking(updated);
+            };
+
+            state.currentModules = updateList(state.currentModules);
+            
+            if (state.learningPath?.modules) {
+                state.learningPath.modules = updateList(state.learningPath.modules);
+            }
         });
 
         builder.addCase(fetchMyProgress.fulfilled, (state, action) => {
@@ -159,8 +262,9 @@ const learningSlice = createSlice({
         builder.addCase(regeneratePath.pending, handlePending).addCase(regeneratePath.rejected, handleRejected);
         builder.addCase(updateModuleProgress.pending, handlePending).addCase(updateModuleProgress.rejected, handleRejected);
         builder.addCase(updateScheduleStatus.pending, handlePending).addCase(updateScheduleStatus.rejected, handleRejected);
+        builder.addCase(resummarizeModule.pending, handlePending).addCase(resummarizeModule.rejected, handleRejected);
     },
 });
 
-export const { setLearningPath } = learningSlice.actions;
+export const { setLearningPath, markModuleWatched } = learningSlice.actions;
 export default learningSlice.reducer;

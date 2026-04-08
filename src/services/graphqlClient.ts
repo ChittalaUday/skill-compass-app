@@ -81,4 +81,12 @@ export const apolloClient = new ApolloClient({
     },
 });
 
+export const clearApolloCache = async () => {
+    try {
+        await apolloClient.clearStore();
+    } catch (error) {
+        console.warn('Error clearing Apollo cache:', error);
+    }
+};
+
 export { WS_URL };
